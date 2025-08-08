@@ -281,7 +281,7 @@ HOME_PAGE_HTML = """
                     <div class="structure-result" id="drawn_homo_result_container" style="display: none;"></div>
                     <hr style="margin: 2em 0;">
                     <h3>Or, Input SMILES String</h3>
-                    <form action="/analyze" method="post" class="form-group">
+                    <form id="analyze_smiles_homo_form" action="/analyze" method="post" class="form-group">
                         <input type="text" name="smiles_analyze" placeholder="e.g., [*]CC([*])C1=CC=CC=C1 for poly(styrene)" required>
                         <button type="submit" class="primary">Run Analysis</button>
                     </form>
@@ -374,6 +374,8 @@ HOME_PAGE_HTML = """
             <ul>
                 <li>Any feedback is welcome. If you have had any issues with calculations, have suggested improvements, or have a compound that cannot be split into the correct functional groups, please contact me by email.</li>
                 <li><a href="mailto:theo.ellingsen@utas.edu.au">theo.ellingsen@utas.edu.au</a></li>
+                <li>The source code for the website can be found <a href="https://github.com/theoellingsen/Hansen-solubility-website">on Github</a>.</li>
+
                 <li></li>
             </ul>
         </footer>
@@ -412,6 +414,17 @@ HOME_PAGE_HTML = """
             // Open the default tab and initialize its editor
             document.querySelector('.tab-button.active').click();
 
+            async function validateSmiles(smiles) {
+                if (!smiles) return false;
+                const response = await fetch('/check_structure_ajax', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ smiles_check: smiles }),
+                });
+                const data = await response.json();
+                return data.success;
+            }
+
             function checkStructure(smilesString, targetContainerId) {
                 const targetContainer = document.getElementById(targetContainerId);
                 if (!smilesString) {
@@ -448,15 +461,37 @@ HOME_PAGE_HTML = """
                 }
             });
 
-            document.getElementById('analyze_drawn_homo_form').addEventListener('submit', (event) => {
+            document.getElementById('analyze_drawn_homo_form').addEventListener('submit', async (event) => {
+                event.preventDefault();
                 if (editorHomo) {
                     let smiles = editorHomo.getSmiles().replace(/\[R\d*\]/g, '[*]');
-                    event.target.querySelector('input[name="smiles_analyze"]').value = smiles;
+                    if (await validateSmiles(smiles)) {
+                        event.target.querySelector('input[name="smiles_analyze"]').value = smiles;
+                        event.target.submit();
+                    } else {
+                        alert("Invalid SMILES from drawing. Please correct the structure.");
+                    }
                 } else {
-                    event.preventDefault();
                     alert("Editor not loaded.");
                 }
             });
+
+            document.getElementById('analyze_smiles_homo_form').addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const form = event.target;
+                const smilesInput = form.querySelector('input[name="smiles_analyze"]');
+                const smiles = smilesInput.value;
+                if (!smiles) {
+                    alert("Please enter a SMILES string.");
+                    return;
+                }
+                if (await validateSmiles(smiles)) {
+                    form.submit();
+                } else {
+                    alert("Invalid SMILES string provided. Please correct it.");
+                }
+            });
+
 
             // --- Copolymer Logic ---
             const addCopolymerBtn = document.getElementById('add_to_copolymer_btn');
@@ -598,5 +633,5 @@ def analyze_copolymer():
 
 
 # ADDED: Block to run the app locally for testing
-#if __name__ == '__main__':
-#    app.run(debug=True, port=50
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)

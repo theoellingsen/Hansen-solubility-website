@@ -146,14 +146,10 @@ def count_first_order_groups(smiles):
             all_matches_for_group.extend(mol.GetSubstructMatches(pattern, uniquify=True))
 
         for match in all_matches_for_group:
-            # This check now correctly ignores hydrogens and dummy atoms.
             heavy_atoms = [idx for idx in match if mol.GetAtomWithIdx(idx).GetAtomicNum() > 1]
             if not any(atom_idx in matched_atoms for atom_idx in heavy_atoms):
                 matched_atoms.update(heavy_atoms)
                 group_counts[name] += 1
-
-    # --- Validation and Interactive Prompt Step ---
-    # FIXED: This now ignores hydrogens (atomic #1) and polymer dummy atoms [*] (atomic #0).
     all_heavy_atoms = {atom.GetIdx() for atom in mol.GetAtoms() if atom.GetAtomicNum() > 1}
     unmatched_indices = all_heavy_atoms.difference(matched_atoms)
 
@@ -172,7 +168,6 @@ def count_first_order_groups(smiles):
             print(f"\n--- Unmatched Atom Found ---")
             print(f"Details: {details}")
             print("Please classify this atom by choosing from the list of available groups:")
-
             print(textwrap.fill(", ".join(available_groups), width=80))
 
             while True:
@@ -202,29 +197,16 @@ def show_structure(smiles, save=True):
     img_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
     return img_base64
 
-
-# Read the CSV file
-df = pd.read_csv('Hansen_solubility_first_order_contributions.csv')
-
-# Optional: clean whitespace and standardize column names
-df.columns = df.columns.str.strip().str.lower()
-df['first-order groups'] = df['first-order groups'].str.strip()
-
-# Set index to group name for easy lookup
-group_contributions = df.set_index('first-order groups')[['delta_d', 'delta_p', 'delta_h']]
-
-# Load the Hansen contributions table once, treating N/A as 0
+# Load the Hansen contributions table once
 hansen_df = pd.read_csv(
     'Hansen_solubility_first_order_contributions.csv',
     na_values=["N/A", "nan"]
 ).fillna(0)
-
-# Convert the "First-order groups" column to match the functional group keys you use
 hansen_df.set_index("First-order groups", inplace=True)
 
 def calculate_hansen_from_smiles(smiles):
     group_counts = count_first_order_groups(smiles)
-    print("group_counts:", group_counts)  # Debug output
+    print("group_counts:", group_counts)
 
     delta_d = delta_p = delta_h = 0.0
     group_contributions = {}
@@ -253,10 +235,6 @@ def calculate_hansen_from_smiles(smiles):
     return delta_d, delta_p, delta_h, group_contributions
 
 def calculate_hansen_for_copolymer(smiles_percentage_dictionary):
-    """
-    Calculates the Hansen Solubility Parameters for a copolymer based on the
-    mole fractions of its constituent monomers.
-    """
     total_delta_d = 0.0
     total_delta_p = 0.0
     total_delta_h = 0.0
@@ -264,36 +242,23 @@ def calculate_hansen_for_copolymer(smiles_percentage_dictionary):
 
     for smiles, percentage in smiles_percentage_dictionary.items():
         mole_fraction = percentage / 100.0
-
-        # Calculate the contributions for each individual monomer
         sigma_d, sigma_p, sigma_h, group_contribs = calculate_hansen_from_smiles(smiles)
-
-        # Store the details for the final report
         monomer_details[smiles] = {
             'mole_fraction': mole_fraction,
             'group_contributions': group_contribs
         }
-
-        # Add the weighted contribution of this monomer to the total
         total_delta_d += sigma_d * mole_fraction
         total_delta_p += sigma_p * mole_fraction
         total_delta_h += sigma_h * mole_fraction
 
-    # Apply the final calibration constants to the summed, weighted contributions
-    mw = 41.053 # This is a constant from the original calculation method
+    mw = 41.053
     final_delta_d = total_delta_d + (0.0 * mw) + 17.3231
     final_delta_p = total_delta_p + (0 * mw) + 7.3548
     final_delta_h = total_delta_h + (0.0 * mw) + 7.9793
 
     return final_delta_d, final_delta_p, final_delta_h, monomer_details
 
-
 def plot_and_calculate_values(smiles):
-
-    """
-    Performs a full analysis for a single molecule, replicating the advanced
-    copolymer report layout and functionality with the specific required calculations.
-    """
     # --- This list can be customized as needed ---
     common_solvent_list = [
         'acetic acid', 'acetone', 'acetonitrile', 'benzene', '1-butanol', '2-butanol',
@@ -307,7 +272,7 @@ def plot_and_calculate_values(smiles):
         'triethyl amine', 'water', 'o-xylene', 'm-xylene', 'p-xylene'
     ]
 
-    # --- Part 1: Hansen Parameter Calculation for a Single Molecule ---
+    # --- Part 1: Hansen Parameter Calculation ---
     try:
         final_group_counts = count_first_order_groups(smiles)
         if not final_group_counts:
@@ -333,8 +298,6 @@ def plot_and_calculate_values(smiles):
             delta_p += contribution["delta_p"]
             delta_h += contribution["delta_h"]
 
-    # --- CALCULATION RESTORED ---
-    # The required hardcoded values are now back in the calculation.
     mw = 41.053
     final_delta_d = delta_d + (0.0 * mw) + 17.3231
     final_delta_p = delta_p + (0 * mw) + 7.3548
@@ -350,20 +313,16 @@ def plot_and_calculate_values(smiles):
         return
 
     solvent_df['is_common'] = solvent_df['Solvent'].str.lower().isin([s.lower() for s in common_solvent_list])
-
     def hansen_distance(row):
         return np.sqrt(4 * (final_delta_d - row["δD"])**2 + (final_delta_p - row["δP"])**2 + (final_delta_h - row["δH"])**2)
     solvent_df["Ra"] = solvent_df.apply(hansen_distance, axis=1)
 
-    # Filter for single solvent matching tables
     all_matches = solvent_df.sort_values("Ra")[["Solvent", "Ra", "δD", "δP", "δH", "is_common"]]
     common_solvents_only_df = solvent_df[solvent_df['is_common']].copy().reset_index(drop=True)
     best_matches = common_solvents_only_df.nsmallest(5, "Ra")[["Solvent", "Ra", "δD", "δP", "δH"]]
     worst_matches = common_solvents_only_df.nlargest(5, "Ra")[["Solvent", "Ra", "δD", "δP", "δH"]]
 
-    # Helper function for two-component optimization
     def get_optimized_mixtures_html(solvents_to_use_df, title, is_detailed_view=False):
-        print(f"Performing optimization for: {title}...")
         mixture_results = []
         if len(solvents_to_use_df) < 2: return f"<h3>{title}</h3><p>Not enough solvents to create mixtures.</p>"
         for (idx1, idx2) in combinations(solvents_to_use_df.index, 2):
@@ -388,7 +347,6 @@ def plot_and_calculate_values(smiles):
 
     top_common_mixtures_html = get_optimized_mixtures_html(common_solvents_only_df, "Using Common Solvents")
     top_all_mixtures_html = get_optimized_mixtures_html(solvent_df, "Using All Solvents", is_detailed_view=True)
-
     target_hsp_json = json.dumps({"d": final_delta_d, "p": final_delta_p, "h": final_delta_h})
     solvents_json = solvent_df[['Solvent', 'δD', 'δP', 'δH']].to_json(orient='records')
 
@@ -397,11 +355,9 @@ def plot_and_calculate_values(smiles):
     img = Draw.MolToImage(mol_image, size=(300, 300)); buf = BytesIO(); img.save(buf, format="PNG")
     img_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
     molecule_structure_html = f"""<div class="structure-card"><img src="data:image/png;base64,{img_base64}" alt="Molecule Structure"/></div>"""
-
     group_contrib_df = pd.DataFrame.from_dict(group_contributions, orient='index').reset_index()
     group_contrib_df.rename(columns={"index":"Functional Group", "delta_d":"ΣD", "delta_p":"ΣP", "delta_h":"ΣH", "count":"Count"}, inplace=True)
     contribution_tables_html = group_contrib_df[['Functional Group', 'Count', 'ΣD', 'ΣP', 'ΣH']].to_html(index=False, classes='small-table')
-
     calculated_df = pd.DataFrame({"Parameter": ["δD", "δP", "δH"], "Value": [round(v, 2) for v in [final_delta_d, final_delta_p, final_delta_h]]})
 
     fig = go.Figure()
@@ -433,8 +389,27 @@ def plot_and_calculate_values(smiles):
         .slider-display {{ font-weight: bold; font-family: monospace; min-width: 130px; }}
         .sandbox-controls {{ display:flex; gap:20px; margin-bottom:1em; align-items: center; }}
         #sandbox-result {{ border: 1px solid #007bff; border-radius: 5px; padding: 15px; margin-top: 1em; display: none; }}
+        
+        /* ## --- ADDED --- CSS for the save button */
+        .save-button {{
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }}
     </style>
     </head><body>
+    
+    <button id="saveReportBtn" class="save-button">Save Report</button>
+    
     <div class="report-section"><h1>Hansen Solubility Analysis for <code>{smiles}</code></h1></div>
     <div class="report-section"><h2>Target Compound Structure</h2>{molecule_structure_html}</div>
     <div class="report-section"><h2>Final Hansen Parameters</h2><div>{calculated_df.to_html(index=False, classes='small-table')}</div></div>
@@ -461,6 +436,32 @@ def plot_and_calculate_values(smiles):
     <div class="report-section"><h2>Functional Group Contribution Details</h2><div>{contribution_tables_html}</div></div>
     <script>
     document.addEventListener('DOMContentLoaded', function() {{
+        /* ## --- ADDED --- JavaScript for the save button functionality */
+        const saveBtn = document.getElementById('saveReportBtn');
+        if (saveBtn) {{
+            saveBtn.addEventListener('click', function() {{
+                // Temporarily hide the button so it's not in the saved file
+                saveBtn.style.display = 'none';
+
+                const htmlContent = document.documentElement.outerHTML;
+                const blob = new Blob([htmlContent], {{ type: 'text/html' }});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                // Create a dynamic filename
+                const smilesCode = document.querySelector('code');
+                const safeSmiles = smilesCode ? smilesCode.textContent.replace(/[^a-zA-Z0-9]/g, '_') : 'polymer';
+                a.download = `Hansen_Analysis_${{safeSmiles}}.html`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                // Show the button again
+                saveBtn.style.display = 'block';
+            }});
+        }}
+        
         const targetHSP = {target_hsp_json};
         const allSolvents = {solvents_json};
         function updateSliderDisplay(slider) {{
@@ -510,10 +511,6 @@ def plot_and_calculate_values(smiles):
     return html_template
 
 def plot_and_calculate_for_copolymer(smiles_percentage_dictionary):
-    """
-    Performs a full analysis for a copolymer and generates a highly interactive and
-    well-formatted HTML report.
-    """
     # This list can be customized as needed.
     common_solvent_list = [
         'acetic acid', 'acetone', 'acetonitrile', 'benzene', '1-butanol', '2-butanol',
@@ -540,36 +537,25 @@ def plot_and_calculate_for_copolymer(smiles_percentage_dictionary):
         return
 
     solvent_df['is_common'] = solvent_df['Solvent'].str.lower().isin([s.lower() for s in common_solvent_list])
-
     def hansen_distance(row):
         return np.sqrt(4 * (final_delta_d - row["δD"])**2 + (final_delta_p - row["δP"])**2 + (final_delta_h - row["δH"])**2)
     solvent_df["Ra"] = solvent_df.apply(hansen_distance, axis=1)
 
-    # Filter for single solvent matching tables
     all_matches = solvent_df.sort_values("Ra")[["Solvent", "Ra", "δD", "δP", "δH", "is_common"]]
     common_solvents_only_df = solvent_df[solvent_df['is_common']]
     best_matches = common_solvents_only_df.nsmallest(5, "Ra")[["Solvent", "Ra", "δD", "δP", "δH"]]
     worst_matches = common_solvents_only_df.nlargest(5, "Ra")[["Solvent", "Ra", "δD", "δP", "δH"]]
 
-    # Helper function for two-component optimization
     def get_optimized_mixtures_html(solvents_to_use_df, title, is_detailed_view=False):
-        print(f"Performing optimization for: {title}...")
         mixture_results = []
-        if len(solvents_to_use_df) < 2:
-            return f"<h3>{title}</h3><p>Not enough solvents to create mixtures.</p>"
-
+        if len(solvents_to_use_df) < 2: return f"<h3>{title}</h3><p>Not enough solvents to create mixtures.</p>"
         for (idx1, idx2) in combinations(solvents_to_use_df.index, 2):
             s1_data, s2_data = solvents_to_use_df.loc[idx1], solvents_to_use_df.loc[idx2]
             for vol_frac1 in np.arange(0.05, 1.0, 0.05):
-                mix_dD = (s1_data['δD'] * vol_frac1) + (s2_data['δD'] * (1.0 - vol_frac1))
-                mix_dP = (s1_data['δP'] * vol_frac1) + (s2_data['δP'] * (1.0 - vol_frac1))
-                mix_dH = (s1_data['δH'] * vol_frac1) + (s2_data['δH'] * (1.0 - vol_frac1))
+                mix_dD = (s1_data['δD'] * vol_frac1) + (s2_data['δD'] * (1.0 - vol_frac1)); mix_dP = (s1_data['δP'] * vol_frac1) + (s2_data['δP'] * (1.0 - vol_frac1)); mix_dH = (s1_data['δH'] * vol_frac1) + (s2_data['δH'] * (1.0 - vol_frac1))
                 ra_mix = np.sqrt(4*(final_delta_d-mix_dD)**2 + (final_delta_p-mix_dP)**2 + (final_delta_h-mix_dH)**2)
                 mixture_results.append({"Solvent 1": s1_data['Solvent'], "Solvent 2": s2_data['Solvent'], "Vol Frac 1": vol_frac1, "Ra": ra_mix})
-
-        if not mixture_results:
-             return f"<h3>{title}</h3><p>No mixtures could be generated.</p>"
-
+        if not mixture_results: return f"<h3>{title}</h3><p>No mixtures could be generated.</p>"
         mixtures_df = pd.DataFrame(mixture_results)
         best_pairs_df = mixtures_df.loc[mixtures_df.groupby(['Solvent 1', 'Solvent 2'])['Ra'].idxmin()]
         top_20_best_pairs = best_pairs_df.nsmallest(20, 'Ra')
@@ -577,19 +563,14 @@ def plot_and_calculate_for_copolymer(smiles_percentage_dictionary):
         for _, row in top_20_best_pairs.iterrows():
             s1, s2 = row['Solvent 1'], row['Solvent 2']
             pair_data = mixtures_df[(mixtures_df['Solvent 1'] == s1) & (mixtures_df['Solvent 2'] == s2)]
-            ra_values_json = json.dumps(list(pair_data.sort_values('Vol Frac 1')['Ra']))
-            slider_start_index = int(round((row['Vol Frac 1'] / 0.05) - 1))
+            ra_values_json = json.dumps(list(pair_data.sort_values('Vol Frac 1')['Ra'])); slider_start_index = int(round((row['Vol Frac 1'] / 0.05) - 1))
             mixture_table_rows_html.append(f"""<tr data-ra-values='{ra_values_json}'><td>{s1}</td><td>{s2}</td><td>{row['Vol Frac 1']:.0%} / {1-row['Vol Frac 1']:.0%}</td><td>{row['Ra']:.2f}</td><td class="slider-cell"><input type="range" min="0" max="18" value="{slider_start_index}" class="ra-slider"><span class="slider-display"></span></td></tr>""")
-
         html_output = f"""<h3 class="table-title">{title}</h3><table class="interactive-table"><thead><tr><th>Solvent 1</th><th>Solvent 2</th><th>Optimized Ratio</th><th>Lowest Ra</th><th>Explore Ratios</th></tr></thead><tbody>{''.join(mixture_table_rows_html)}</tbody></table>"""
-
-        if is_detailed_view:
-            return f"<details><summary>Show optimized systems using all available solvents</summary>{html_output}</details>"
+        if is_detailed_view: return f"<details><summary>Show optimized systems using all available solvents</summary>{html_output}</details>"
         return html_output
 
     top_common_mixtures_html = get_optimized_mixtures_html(common_solvents_only_df, "Using Common Solvents")
     top_all_mixtures_html = get_optimized_mixtures_html(solvent_df, "Using All Solvents", is_detailed_view=True)
-
     copolymer_hsp_json = json.dumps({"d": final_delta_d, "p": final_delta_p, "h": final_delta_h})
     solvents_json = solvent_df[['Solvent', 'δD', 'δP', 'δH']].to_json(orient='records')
 
@@ -608,8 +589,7 @@ def plot_and_calculate_for_copolymer(smiles_percentage_dictionary):
     calculated_df = pd.DataFrame({"Parameter": ["Final Copolymer δD", "Final Copolymer δP", "Final Copolymer δH"], "Value": [round(v, 2) for v in [final_delta_d, final_delta_p, final_delta_h]]})
 
     fig = go.Figure()
-    df_common = solvent_df[solvent_df['is_common']]
-    df_other = solvent_df[~solvent_df['is_common']]
+    df_common = solvent_df[solvent_df['is_common']]; df_other = solvent_df[~solvent_df['is_common']]
     fig.add_trace(go.Scatter3d(x=df_other["δD"], y=df_other["δP"], z=df_other["δH"], mode="markers", marker=dict(size=5, color='gray', opacity=0.5), text=df_other["Solvent"], hoverinfo="text", name="Other Solvents"))
     fig.add_trace(go.Scatter3d(x=df_common["δD"], y=df_common["δP"], z=df_common["δH"], mode="markers", marker=dict(size=6, color='#1f77b4'), text=df_common["Solvent"], hoverinfo="text", name="Common Solvents"))
     fig.add_trace(go.Scatter3d(x=[final_delta_d], y=[final_delta_p], z=[final_delta_h], mode="markers", marker=dict(size=10, color='purple', symbol='diamond'), name="Copolymer", hovertext=[f"Copolymer<br>δD:{final_delta_d:.2f}<br>δP:{final_delta_p:.2f}<br>δH:{final_delta_h:.2f}"], hoverinfo="text"))
@@ -638,20 +618,36 @@ def plot_and_calculate_for_copolymer(smiles_percentage_dictionary):
         .slider-display {{ font-weight: bold; font-family: monospace; min-width: 130px; }}
         .sandbox-controls {{ display:flex; gap:20px; margin-bottom:1em; align-items: center; }}
         #sandbox-result {{ border: 1px solid #007bff; border-radius: 5px; padding: 15px; margin-top: 1em; display: none; }}
+
+        /* ## --- ADDED --- CSS for the save button */
+        .save-button {{
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }}
     </style>
     </head><body>
+    
+    <button id="saveReportBtn" class="save-button">Save Report</button>
+    
     <div class="report-section"><h1>Hansen Solubility Analysis for Copolymer</h1></div>
-
     <div class="report-section">
         <h2>Copolymer Composition</h2>
         <div class="monomer-section">{monomers_section_html}</div>
     </div>
-
     <div class="report-section">
         <h2>Final Copolymer Results</h2>
         <div>{calculated_df.to_html(index=False, classes='small-table')}</div>
     </div>
-
     <div class="report-section">
         <h2>Single Solvent Matching</h2>
         <div class="side-by-side-container">
@@ -659,40 +655,49 @@ def plot_and_calculate_for_copolymer(smiles_percentage_dictionary):
             <div><h3 class="table-title">Top 5 Worst Common Solvents</h3>{worst_matches.to_html(index=False)}</div>
         </div>
     </div>
-
     <div class="report-section">
         <h2>Hansen Solubility 3D Plot</h2>
-        <details>
-            <summary>Click to show or hide the interactive plot</summary>
-            <div>{plot_html}</div>
-        </details>
+        <details><summary>Click to show or hide the interactive plot</summary><div>{plot_html}</div></details>
     </div>
-
     <div class="report-section">
         <h2>Choose two solvents to optimise their ratio for maximum solubility:</h2>
         <div class="sandbox-controls">
             <label>Solvent 1: <select id="solvent1-select"><option value="">-- Select --</option></select></label>
             <label>Solvent 2: <select id="solvent2-select"><option value="">-- Select --</option></select></label>
         </div>
-        <div id="sandbox-result">
-            <p><strong>Optimal Mix:</strong> <span id="sandbox-optimal"></span></p>
-            <div class="slider-cell"><input type="range" min="0" max="18" value="9" class="ra-slider" id="sandbox-slider"><span class="slider-display" id="sandbox-display"></span></div>
-        </div>
+        <div id="sandbox-result"><p><strong>Optimal Mix:</strong> <span id="sandbox-optimal"></span></p><div class="slider-cell"><input type="range" min="0" max="18" value="9" class="ra-slider" id="sandbox-slider"><span class="slider-display" id="sandbox-display"></span></div></div>
     </div>
-
     <div class="report-section">
-        <h2>Optimized Two-Component Solvent Systems</h2>
-        {top_common_mixtures_html}
-        {top_all_mixtures_html}
+        <h2>Optimized Two-Component Solvent Systems</h2>{top_common_mixtures_html}{top_all_mixtures_html}
     </div>
-
     <div class="report-section">
-        <h2>Functional Group Contribution Details</h2>
-        <div>{contribution_tables_html}</div>
+        <h2>Functional Group Contribution Details</h2><div>{contribution_tables_html}</div>
     </div>
-
     <script>
     document.addEventListener('DOMContentLoaded', function() {{
+        /* ## --- ADDED --- JavaScript for the save button functionality */
+        const saveBtn = document.getElementById('saveReportBtn');
+        if (saveBtn) {{
+            saveBtn.addEventListener('click', function() {{
+                // Temporarily hide the button so it's not in the saved file
+                saveBtn.style.display = 'none';
+
+                const htmlContent = document.documentElement.outerHTML;
+                const blob = new Blob([htmlContent], {{ type: 'text/html' }});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Hansen_Analysis_Copolymer.html';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                // Show the button again
+                saveBtn.style.display = 'block';
+            }});
+        }}
+        
         const copolymerHSP = {copolymer_hsp_json};
         const allSolvents = {solvents_json};
         function updateSliderDisplay(slider) {{
