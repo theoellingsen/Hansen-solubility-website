@@ -227,9 +227,56 @@ HOME_PAGE_HTML = """
         .tab-content.active {
             display: block;
         }
+
+        /* ## --- ADDED --- CSS for the loading overlay */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            z-index: 9999;
+            display: none; /* Hidden by default */
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(4px);
+        }
+        .loader-box {
+            text-align: center;
+            background-color: var(--card-bg);
+            padding: 2em 3em;
+            border-radius: 8px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        }
+        .loader-box h2 {
+            margin-top: 0;
+            color: var(--heading-color);
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid var(--border-color);
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1em auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
+    <div id="loading-overlay">
+        <div class="loader-box">
+            <div class="spinner"></div>
+            <h2>Running Analysis...</h2>
+            <p>This can take up to 20 seconds. Please wait.</p>
+        </div>
+    </div>
+
     <div class="container">
         <header>
             <h1>Hansen Solubility Calculator for Polymers</h1>
@@ -246,30 +293,28 @@ HOME_PAGE_HTML = """
                             <li><strong>For Copolymers:</strong> Draw each monomer, click "Add to Copolymer", set the mole percentages in the builder table, and then click "Run Copolymer Analysis".</li>
                             <li>You can check any structure (drawn or pasted) at any time using the "Check Structure" buttons.</li>
                             <li><strong>View the Report:</strong> A new page will load containing the complete, interactive solubility report for your molecule.</li>
-                        <li><strong>Thoroughly check the results:</strong>
-                            <p>This is a crudely made program, where I attempt to split compounds into their functional groups based on the SMILES you provide, and therefore perform Hansen Solubility Analysis based on these functional groups. The more complicated the structure, the more likely the program will make errors in splitting the structure into it's functional groups. So you can check this, I have included this in a table at the end of the results page. If this is incorrect, missing parts, or has incorrectly assigned functional groups, the calculations will be wrong. These calculations are also not suitable for small molecules, as the calculations for these are significantly more complicated. Please only use this tool for polymers, and take results with a grain of salt. For full information on how these calculations have been performed, please see the explainer at the bottom of this page.</p>
-                        </li>
+                            <li><strong>Thoroughly check the results:</strong>
+                                <p>This is a crudely made program, where I attempt to split compounds into their functional groups based on the SMILES you provide, and therefore perform Hansen Solubility Analysis based on these functional groups. The more complicated the structure, the more likely the program will make errors in splitting the structure into it's functional groups. So you can check this, I have included this in a table at the end of the results page. If this is incorrect, missing parts, or has incorrectly assigned functional groups, the calculations will be wrong. These calculations are also not suitable for small molecules, as the calculations for these are significantly more complicated. Please only use this tool for polymers, and take results with a grain of salt. For full information on how these calculations have been performed, please see the explainer at the bottom of this page.</p>
+                            </li>
                         </ol>
                     </div>
                 </details>
             </div>
 
-            <!-- Main Analysis Section with Tabs -->
             <div class="card">
                 <div class="tab-buttons">
                     <button class="tab-button active" onclick="openTab(event, 'homopolymer-tab')">Homopolymer Analysis</button>
                     <button class="tab-button" onclick="openTab(event, 'copolymer-tab')">Copolymer Analysis</button>
                 </div>
 
-                <!-- Homopolymer Tab -->
                 <div id="homopolymer-tab" class="tab-content active">
                     <h3>Draw Polymer's Repeating Unit</h3>
                     <p>Use the editor to draw the core structure of your polymer's repeating unit. To define how it connects into a chain, you must mark the two connection points using 'R' atoms.</p>
-<ol style="text-align: left; max-width: 600px; margin: 1em auto;">
-    <li>Draw the single repeating unit of your polymer.</li>
-    <li>At the two points where the unit would bond to its neighbors, add an 'R' atom by hovering over the atom and pressing R on your keyboard.</li>
-    <li>These 'R' atoms will be automatically converted to the <code>[*]</code> character required for a valid polymer SMILES string.</li>
-</ol>
+                    <ol style="text-align: left; max-width: 600px; margin: 1em auto;">
+                        <li>Draw the single repeating unit of your polymer.</li>
+                        <li>At the two points where the unit would bond to its neighbors, add an 'R' atom by hovering over the atom and pressing R on your keyboard.</li>
+                        <li>These 'R' atoms will be automatically converted to the <code>[*]</code> character required for a valid polymer SMILES string.</li>
+                    </ol>
                     <div id="ocl-editor-container-homo" style="width: 100%; height: 450px; border: 1px solid var(--border-color); border-radius: 6px; position: relative; overflow: hidden;"></div>
                     <div class="action-buttons">
                         <button type="button" id="check_drawn_homo_btn" class="secondary">Check Drawn Structure</button>
@@ -287,15 +332,14 @@ HOME_PAGE_HTML = """
                     </form>
                 </div>
 
-                <!-- Copolymer Tab -->
                 <div id="copolymer-tab" class="tab-content">
                     <h3>Draw and Add Copolymer Units</h3>
                     <p>Use the editor to draw the core structure of your polymer's repeating unit. To define how it connects into a chain, you must mark the two connection points using 'R' atoms.</p>
-<ol style="text-align: left; max-width: 600px; margin: 1em auto;">
-    <li>Draw the single repeating unit of your polymer.</li>
-    <li>At the two points where the unit would bond to its neighbors, add an 'R' atom by hovering over the atom and pressing R on your keyboard.</li>
-    <li>These 'R' atoms will be automatically converted to the <code>[*]</code> character required for a valid polymer SMILES string.</li>
-</ol>
+                    <ol style="text-align: left; max-width: 600px; margin: 1em auto;">
+                        <li>Draw the single repeating unit of your polymer.</li>
+                        <li>At the two points where the unit would bond to its neighbors, add an 'R' atom by hovering over the atom and pressing R on your keyboard.</li>
+                        <li>These 'R' atoms will be automatically converted to the <code>[*]</code> character required for a valid polymer SMILES string.</li>
+                    </ol>
                     <div id="ocl-editor-container-copo" style="width: 100%; height: 450px; border: 1px solid var(--border-color); border-radius: 6px; position: relative; overflow: hidden;"></div>
                     <div class="action-buttons">
                          <button type="button" id="check_drawn_copo_btn" class="secondary">Check Drawn Structure</button>
@@ -325,9 +369,9 @@ HOME_PAGE_HTML = """
                     </table>
                     <div class="action-buttons">
                          <form id="analyze_copolymer_form" action="/analyze_copolymer" method="post">
-                            <input type="hidden" name="copolymer_data">
-                            <button type="submit" class="primary">Run Copolymer Analysis</button>
-                        </form>
+                             <input type="hidden" name="copolymer_data">
+                             <button type="submit" class="primary">Run Copolymer Analysis</button>
+                         </form>
                     </div>
                 </div>
             </div>
@@ -385,6 +429,14 @@ HOME_PAGE_HTML = """
 
     <script>
         let editorHomo, editorCopo;
+
+        /* ## --- ADDED --- Function to show the loading overlay */
+        function showLoader() {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) {
+                overlay.style.display = 'flex';
+            }
+        }
 
         function openTab(evt, tabName) {
             var i, tabcontent, tabbuttons;
@@ -456,16 +508,18 @@ HOME_PAGE_HTML = """
             // --- Homopolymer Logic ---
             document.getElementById('check_drawn_homo_btn').addEventListener('click', () => {
                 if (editorHomo) {
-                    let smiles = editorHomo.getSmiles().replace(/\[R\d*\]/g, '[*]');
+                    let smiles = editorHomo.getSmiles().replace(/\\[R\\d*\\]/g, '[*]');
                     checkStructure(smiles, 'drawn_homo_result_container');
                 }
             });
 
+            /* ## --- MODIFIED --- Added showLoader() before submitting the form */
             document.getElementById('analyze_drawn_homo_form').addEventListener('submit', async (event) => {
                 event.preventDefault();
                 if (editorHomo) {
-                    let smiles = editorHomo.getSmiles().replace(/\[R\d*\]/g, '[*]');
+                    let smiles = editorHomo.getSmiles().replace(/\\[R\\d*\\]/g, '[*]');
                     if (await validateSmiles(smiles)) {
+                        showLoader(); // Show the loader
                         event.target.querySelector('input[name="smiles_analyze"]').value = smiles;
                         event.target.submit();
                     } else {
@@ -476,6 +530,7 @@ HOME_PAGE_HTML = """
                 }
             });
 
+            /* ## --- MODIFIED --- Added showLoader() before submitting the form */
             document.getElementById('analyze_smiles_homo_form').addEventListener('submit', async (event) => {
                 event.preventDefault();
                 const form = event.target;
@@ -486,6 +541,7 @@ HOME_PAGE_HTML = """
                     return;
                 }
                 if (await validateSmiles(smiles)) {
+                    showLoader(); // Show the loader
                     form.submit();
                 } else {
                     alert("Invalid SMILES string provided. Please correct it.");
@@ -501,7 +557,7 @@ HOME_PAGE_HTML = """
 
             document.getElementById('check_drawn_copo_btn').addEventListener('click', () => {
                  if (editorCopo) {
-                    let smiles = editorCopo.getSmiles().replace(/\[R\d*\]/g, '[*]');
+                    let smiles = editorCopo.getSmiles().replace(/\\[R\\d*\\]/g, '[*]');
                     checkStructure(smiles, 'drawn_copo_result_container');
                 }
             });
@@ -517,7 +573,7 @@ HOME_PAGE_HTML = """
 
             addCopolymerBtn.addEventListener('click', function() {
                 if (!editorCopo) return;
-                let smiles = editorCopo.getSmiles().replace(/\[R\d*\]/g, '[*]');
+                let smiles = editorCopo.getSmiles().replace(/\\[R\\d*\\]/g, '[*]');
                 if (smiles) {
                     if (copolymerTableBody.querySelector(`tr[data-smiles="${smiles}"]`)) {
                         alert("This monomer has already been added.");
@@ -553,6 +609,7 @@ HOME_PAGE_HTML = """
                 }
             });
 
+            /* ## --- MODIFIED --- Added showLoader() before submitting the form */
             analyzeCopolymerForm.addEventListener('submit', function(event) {
                 event.preventDefault();
                 let total = 0;
@@ -574,6 +631,7 @@ HOME_PAGE_HTML = """
                     alert(`Total mole percentage must be 100%, but it is ${total.toFixed(0)}%.`);
                     return;
                 }
+                showLoader(); // Show the loader
                 analyzeCopolymerForm.querySelector('input[name="copolymer_data"]').value = JSON.stringify(copolymerData);
                 analyzeCopolymerForm.submit();
             });
@@ -633,5 +691,5 @@ def analyze_copolymer():
 
 
 # ADDED: Block to run the app locally for testing
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+#if __name__ == '__main__':
+#    app.run(debug=True, port=5000)
